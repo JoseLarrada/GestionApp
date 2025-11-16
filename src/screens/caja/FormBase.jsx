@@ -2,23 +2,43 @@ import { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { db } from '../../db/database';
-import { Button, Input, AlertDialog, Card } from '../../components';
+import { addBase } from '../../db/database';
+import { Button, Input, AlertDialog, Card, DatePicker } from '../../components';
 import { colors, spacing, typography } from '../../theme';
 import { appEvents } from '../../utils/events';
 
-export default function FormTransportadora({ route, navigation }) {
-  const trans = route.params?.trans || {};
-  const [name, setName] = useState(trans.name || '');
-  const [observations, setObservations] = useState(trans.observations || '');
+export default function FormBase({ navigation }) {
+  const [amount, setAmount] = useState('');
+  const [observations, setObservations] = useState('');
+  const [date, setDate] = useState(new Date());
   const [errors, setErrors] = useState({});
   const [alert, setAlert] = useState({ visible: false, type: 'success', title: '', message: '' });
+
+  const formatNumber = (value) => {
+    const cleaned = value.replace(/[^\d.]/g, '');
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+      return amount;
+    }
+    const [integer, decimal] = parts;
+    const formattedInteger = integer.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return decimal !== undefined ? `${formattedInteger}.${decimal}` : formattedInteger;
+  };
+
+  const parseNumber = (formattedValue) => {
+    return formattedValue.replace(/,/g, '');
+  };
 
   const validate = () => {
     const newErrors = {};
     
-    if (!name.trim()) {
-      newErrors.name = 'El nombre es requerido';
+    if (!amount.trim()) {
+      newErrors.amount = 'El monto es requerido';
+    } else {
+      const numValue = parseFloat(parseNumber(amount));
+      if (isNaN(numValue) || numValue <= 0) {
+        newErrors.amount = 'Ingresa un monto válido mayor a 0';
+      }
     }
 
     setErrors(newErrors);
@@ -29,37 +49,31 @@ export default function FormTransportadora({ route, navigation }) {
     if (!validate()) return;
 
     try {
-      if (trans.id) {
-        db.runSync(`UPDATE transportadoras SET name=?, observations=? WHERE id=?`, 
-          [name.trim(), observations.trim() || null, trans.id]);
-        setAlert({
-          visible: true,
-          type: 'success',
-          title: '¡Actualizado!',
-          message: 'La transportadora se actualizó correctamente',
-        });
-      } else {
-        db.runSync(`INSERT INTO transportadoras (name, observations) VALUES (?,?)`, 
-          [name.trim(), observations.trim() || null]);
+      const numericAmount = parseFloat(parseNumber(amount));
+      
+      const success = addBase(numericAmount, observations.trim() || null);
+      
+      if (success) {
         setAlert({
           visible: true,
           type: 'success',
           title: '¡Guardado!',
-          message: 'La transportadora se creó correctamente',
+          message: 'El dinero se agregó a la base correctamente',
         });
+        
+        appEvents.onBaseChanged();
+        appEvents.onDataChanged();
+        
+        setTimeout(() => navigation.goBack(), 1500);
+      } else {
+        throw new Error('No se pudo guardar');
       }
-      
-      // Emitir evento para refrescar automáticamente
-      appEvents.onTransportadorasChanged();
-      appEvents.onDataChanged();
-      
-      setTimeout(() => navigation.goBack(), 1500);
     } catch (e) {
       setAlert({
         visible: true,
         type: 'error',
         title: 'Error',
-        message: e.message || 'No se pudo guardar la transportadora',
+        message: e.message || 'No se pudo agregar el dinero a la base',
       });
     }
   };
@@ -70,19 +84,16 @@ export default function FormTransportadora({ route, navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      {/* Header con gradiente */}
       <LinearGradient
-        colors={[colors.primary, '#1565C0']}
+        colors={['#4CAF50', '#388E3C']}
         style={styles.header}
       >
         <View style={styles.headerIconContainer}>
-          <Ionicons name="car" size={48} color="#fff" />
+          <Ionicons name="cash" size={48} color="#fff" />
         </View>
-        <Text style={styles.headerTitle}>
-          {trans.id ? 'Editar Transportadora' : 'Nueva Transportadora'}
-        </Text>
+        <Text style={styles.headerTitle}>Agregar a Base</Text>
         <Text style={styles.headerSubtitle}>
-          {trans.id ? 'Actualiza la información' : 'Registra una nueva empresa de transporte'}
+          Registra dinero entregado para caja menor
         </Text>
       </LinearGradient>
 
@@ -92,40 +103,37 @@ export default function FormTransportadora({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Información de la Transportadora */}
         <Card style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconContainer}>
-              <Ionicons name="car" size={24} color="#fff" />
+              <Ionicons name="information-circle" size={24} color="#fff" />
             </View>
-            <Text style={styles.sectionTitle}>Información de la Transportadora</Text>
+            <Text style={styles.sectionTitle}>Información</Text>
           </View>
 
           <Input
-            label="Nombre de la transportadora *"
-            placeholder="Ej: Servientrega, Coordinadora, etc."
-            value={name}
+            label="Monto *"
+            placeholder="0.00"
+            value={formatNumber(amount)}
             onChangeText={(text) => {
-              setName(text);
-              setErrors(prev => ({ ...prev, name: '' }));
+              setAmount(parseNumber(text));
+              setErrors(prev => ({ ...prev, amount: '' }));
             }}
-            icon="car"
-            error={errors.name}
+            icon="cash"
+            keyboardType="decimal-pad"
+            error={errors.amount}
           />
-        </Card>
 
-        {/* Información Adicional */}
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconContainer}>
-              <Ionicons name="document-text" size={24} color="#fff" />
-            </View>
-            <Text style={styles.sectionTitle}>Información Adicional</Text>
-          </View>
+          <DatePicker
+            label="Fecha"
+            value={date}
+            onChange={setDate}
+            mode="date"
+          />
 
           <Input
             label="Observaciones"
-            placeholder="Información adicional, contacto, horarios..."
+            placeholder="Notas o detalles adicionales..."
             value={observations}
             onChangeText={setObservations}
             icon="document-text"
@@ -134,11 +142,10 @@ export default function FormTransportadora({ route, navigation }) {
           />
         </Card>
 
-        {/* Botones de acción */}
         <View style={styles.buttonContainer}>
           <Button
-            title={trans.id ? 'Actualizar Transportadora' : 'Guardar Transportadora'}
-            icon={trans.id ? 'checkmark-circle' : 'add-circle'}
+            title="Agregar a Base"
+            icon="add-circle"
             onPress={save}
             fullWidth
             style={styles.saveButton}
@@ -215,7 +222,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primary,
+    backgroundColor: '#4CAF50',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,
@@ -230,5 +237,6 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginBottom: spacing.sm,
+    backgroundColor: '#4CAF50',
   },
 });

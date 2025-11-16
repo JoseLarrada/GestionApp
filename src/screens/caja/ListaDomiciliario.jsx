@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Platform, Linking } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../db/database';
@@ -7,8 +7,8 @@ import { Button, Input, Card, ConfirmDialog, AlertDialog, EmptyState } from '../
 import { colors, spacing, typography } from '../../theme';
 import { appEvents } from '../../utils/events';
 
-export default function ListaTransportadoras({ navigation }) {
-  const [transportadoras, setTransportadoras] = useState([]);
+export default function ListaDomiciliarios({ navigation }) {
+  const [domiciliarios, setDomiciliarios] = useState([]);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState({ visible: false, id: null });
@@ -17,10 +17,10 @@ export default function ListaTransportadoras({ navigation }) {
   const load = useCallback(() => {
     try {
       const rows = db.getAllSync(
-        `SELECT * FROM transportadoras WHERE name LIKE ? ORDER BY name`,
+        `SELECT * FROM domiciliarios WHERE name LIKE ? ORDER BY name`,
         [`%${search}%`]
       );
-      setTransportadoras(rows);
+      setDomiciliarios(rows);
     } catch (e) {
       console.error(e);
     }
@@ -29,15 +29,14 @@ export default function ListaTransportadoras({ navigation }) {
   useEffect(() => { 
     load(); 
     
-    // Suscribirse a eventos
-    const handleTransportadorasChanged = () => load();
+    const handleDomiciliariosChanged = () => load();
     const handleDataChanged = () => load();
     
-    appEvents.on('transportadoras:changed', handleTransportadorasChanged);
+    appEvents.on('domiciliarios:changed', handleDomiciliariosChanged);
     appEvents.on('data:changed', handleDataChanged);
     
     return () => {
-      appEvents.off('transportadoras:changed', handleTransportadorasChanged);
+      appEvents.off('domiciliarios:changed', handleDomiciliariosChanged);
       appEvents.off('data:changed', handleDataChanged);
     };
   }, [load]);
@@ -52,18 +51,18 @@ export default function ListaTransportadoras({ navigation }) {
     setDeleteDialog({ visible: true, id });
   };
 
-  const deleteTrans = () => {
+  const deleteDomiciliario = () => {
     try {
-      db.runSync(`DELETE FROM transportadoras WHERE id = ?`, [deleteDialog.id]);
+      db.runSync(`DELETE FROM domiciliarios WHERE id = ?`, [deleteDialog.id]);
       
-      appEvents.onTransportadorasChanged();
+      appEvents.onDomiciliariosChanged();
       appEvents.onDataChanged();
       
       setAlert({
         visible: true,
         type: 'success',
         title: '¡Eliminado!',
-        message: 'La transportadora se eliminó correctamente',
+        message: 'El domiciliario se eliminó correctamente',
       });
       setDeleteDialog({ visible: false, id: null });
       load();
@@ -72,27 +71,33 @@ export default function ListaTransportadoras({ navigation }) {
         visible: true,
         type: 'error',
         title: 'No se puede eliminar',
-        message: 'Hay gastos vinculados a esta transportadora',
+        message: 'Hay gastos vinculados a este domiciliario',
       });
       setDeleteDialog({ visible: false, id: null });
     }
   };
 
+  const handleCall = (phone) => {
+    if (phone) {
+      Linking.openURL(`tel:${phone}`);
+    }
+  };
+
   const renderHeader = () => (
     <LinearGradient
-      colors={[colors.primary, '#1565C0']}
+      colors={['#6bd0ffff', '#84b2f7ff']}
       style={styles.header}
     >
-      <Text style={styles.headerTitle}>Transportadoras</Text>
+      <Text style={styles.headerTitle}>Domiciliarios</Text>
       <Text style={styles.headerSubtitle}>
-        {transportadoras.length} {transportadoras.length === 1 ? 'empresa' : 'empresas'}
+        {domiciliarios.length} {domiciliarios.length === 1 ? 'domiciliario' : 'domiciliarios'}
       </Text>
 
       {/* Búsqueda */}
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
         <Input
-          placeholder="Buscar transportadoras..."
+          placeholder="Buscar domiciliarios..."
           value={search}
           onChangeText={setSearch}
           style={styles.searchInput}
@@ -102,29 +107,41 @@ export default function ListaTransportadoras({ navigation }) {
 
       {/* Botón principal */}
       <Button
-        title="Nueva Transportadora"
+        title="Nuevo Domiciliario"
         icon="add-circle"
-        onPress={() => navigation.navigate('FormTransportadora')}
+        onPress={() => navigation.navigate('FormDomiciliario')}
         style={styles.newButton}
         size="large"
       />
     </LinearGradient>
   );
 
-  const renderTransportadora = ({ item }) => (
-    <Card style={styles.transportadoraCard}>
+  const renderDomiciliario = ({ item }) => (
+    <Card style={styles.domiciliarioCard}>
       <TouchableOpacity 
         style={styles.cardContent}
-        onPress={() => navigation.navigate('FormTransportadora', { trans: item })}
+        onPress={() => navigation.navigate('FormDomiciliario', { domiciliario: item })}
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
           <View style={styles.iconContainer}>
-            <Ionicons name="car" size={28} color="#fff" />
+            <Ionicons name="bicycle" size={28} color="#fff" />
           </View>
           
           <View style={styles.cardInfo}>
-            <Text style={styles.transportadoraName}>{item.name}</Text>
+            <Text style={styles.domiciliarioName}>{item.name}</Text>
+            
+            {item.phone && (
+              <TouchableOpacity 
+                style={styles.phoneContainer}
+                onPress={() => handleCall(item.phone)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="call" size={16} color={colors.secondary} />
+                <Text style={styles.phoneText}>{item.phone}</Text>
+              </TouchableOpacity>
+            )}
+            
             {item.observations && (
               <Text style={styles.observations} numberOfLines={2}>
                 {item.observations}
@@ -132,12 +149,23 @@ export default function ListaTransportadoras({ navigation }) {
             )}
           </View>
 
-          <TouchableOpacity 
-            style={styles.deleteButton}
-            onPress={() => confirmDelete(item.id)}
-          >
-            <Ionicons name="trash-outline" size={24} color={colors.error} />
-          </TouchableOpacity>
+          <View style={styles.cardActions}>
+            {item.phone && (
+              <TouchableOpacity 
+                style={styles.callButton}
+                onPress={() => handleCall(item.phone)}
+              >
+                <Ionicons name="call" size={22} color={colors.secondary} />
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity 
+              style={styles.deleteButton}
+              onPress={() => confirmDelete(item.id)}
+            >
+              <Ionicons name="trash-outline" size={22} color={colors.error} />
+            </TouchableOpacity>
+          </View>
         </View>
       </TouchableOpacity>
     </Card>
@@ -146,9 +174,9 @@ export default function ListaTransportadoras({ navigation }) {
   return (
     <View style={styles.container}>
       <FlatList
-        data={transportadoras}
+        data={domiciliarios}
         keyExtractor={(item) => item.id.toString()}
-        renderItem={renderTransportadora}
+        renderItem={renderDomiciliario}
         ListHeaderComponent={renderHeader}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -156,15 +184,15 @@ export default function ListaTransportadoras({ navigation }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[colors.primary]}
-            tintColor={colors.primary}
+            colors={['#84b2f7ff']}
+            tintColor={'#84b2f7ff'}
           />
         }
         ListEmptyComponent={
           <EmptyState
-            icon="car-outline"
-            title="No hay transportadoras"
-            message={search ? "No se encontraron transportadoras con ese nombre" : "Agrega tu primera transportadora usando el botón 'Nueva Transportadora'"}
+            icon="bicycle-outline"
+            title="No hay domiciliarios"
+            message={search ? "No se encontraron domiciliarios con ese nombre" : "Agrega tu primer domiciliario usando el botón 'Nuevo Domiciliario'"}
           />
         }
       />
@@ -172,9 +200,9 @@ export default function ListaTransportadoras({ navigation }) {
       <ConfirmDialog
         visible={deleteDialog.visible}
         onClose={() => setDeleteDialog({ visible: false, id: null })}
-        onConfirm={deleteTrans}
-        title="¿Eliminar transportadora?"
-        message="Los gastos vinculados quedarán sin transportadora"
+        onConfirm={deleteDomiciliario}
+        title="¿Eliminar domiciliario?"
+        message="Los gastos vinculados quedarán sin domiciliario"
         variant="danger"
       />
 
@@ -232,7 +260,7 @@ const styles = StyleSheet.create({
   newButton: {
     marginBottom: 0,
   },
-  transportadoraCard: {
+  domiciliarioCard: {
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
     padding: 0,
@@ -242,13 +270,13 @@ const styles = StyleSheet.create({
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   iconContainer: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: colors.primary,
+    backgroundColor: '#84b2f7ff',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -256,15 +284,34 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: spacing.md,
   },
-  transportadoraName: {
+  domiciliarioName: {
     ...typography.h3,
     color: colors.text,
     marginBottom: spacing.xs,
+  },
+  phoneContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  phoneText: {
+    ...typography.bodySmall,
+    color: colors.secondary,
+    fontWeight: '500',
   },
   observations: {
     ...typography.bodySmall,
     color: colors.textSecondary,
     fontStyle: 'italic',
+  },
+  cardActions: {
+    gap: spacing.xs,
+  },
+  callButton: {
+    padding: spacing.sm,
+    backgroundColor: `${colors.secondary}15`,
+    borderRadius: 8,
   },
   deleteButton: {
     padding: spacing.sm,

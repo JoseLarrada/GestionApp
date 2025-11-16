@@ -19,6 +19,7 @@
     "expo": "~54.0.23",
     "expo-document-picker": "~14.0.7",
     "expo-file-system": "~19.0.17",
+    "expo-linear-gradient": "~15.0.7",
     "expo-sharing": "~14.0.7",
     "expo-sqlite": "~16.0.9",
     "expo-sqlite-legacy-adapter": "^0.2.0",

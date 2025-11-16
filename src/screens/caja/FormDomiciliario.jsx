@@ -7,10 +7,11 @@ import { Button, Input, AlertDialog, Card } from '../../components';
 import { colors, spacing, typography } from '../../theme';
 import { appEvents } from '../../utils/events';
 
-export default function FormTransportadora({ route, navigation }) {
-  const trans = route.params?.trans || {};
-  const [name, setName] = useState(trans.name || '');
-  const [observations, setObservations] = useState(trans.observations || '');
+export default function FormDomiciliario({ route, navigation }) {
+  const domiciliario = route.params?.domiciliario || {};
+  const [name, setName] = useState(domiciliario.name || '');
+  const [phone, setPhone] = useState(domiciliario.phone || '');
+  const [observations, setObservations] = useState(domiciliario.observations || '');
   const [errors, setErrors] = useState({});
   const [alert, setAlert] = useState({ visible: false, type: 'success', title: '', message: '' });
 
@@ -29,28 +30,31 @@ export default function FormTransportadora({ route, navigation }) {
     if (!validate()) return;
 
     try {
-      if (trans.id) {
-        db.runSync(`UPDATE transportadoras SET name=?, observations=? WHERE id=?`, 
-          [name.trim(), observations.trim() || null, trans.id]);
+      if (domiciliario.id) {
+        db.runSync(
+          `UPDATE domiciliarios SET name=?, phone=?, observations=? WHERE id=?`,
+          [name.trim(), phone.trim() || null, observations.trim() || null, domiciliario.id]
+        );
         setAlert({
           visible: true,
           type: 'success',
           title: '¡Actualizado!',
-          message: 'La transportadora se actualizó correctamente',
+          message: 'El domiciliario se actualizó correctamente',
         });
       } else {
-        db.runSync(`INSERT INTO transportadoras (name, observations) VALUES (?,?)`, 
-          [name.trim(), observations.trim() || null]);
+        db.runSync(
+          `INSERT INTO domiciliarios (name, phone, observations) VALUES (?,?,?)`,
+          [name.trim(), phone.trim() || null, observations.trim() || null]
+        );
         setAlert({
           visible: true,
           type: 'success',
           title: '¡Guardado!',
-          message: 'La transportadora se creó correctamente',
+          message: 'El domiciliario se registró correctamente',
         });
       }
       
-      // Emitir evento para refrescar automáticamente
-      appEvents.onTransportadorasChanged();
+      appEvents.onDomiciliariosChanged();
       appEvents.onDataChanged();
       
       setTimeout(() => navigation.goBack(), 1500);
@@ -59,7 +63,7 @@ export default function FormTransportadora({ route, navigation }) {
         visible: true,
         type: 'error',
         title: 'Error',
-        message: e.message || 'No se pudo guardar la transportadora',
+        message: e.message || 'No se pudo guardar el domiciliario',
       });
     }
   };
@@ -70,19 +74,18 @@ export default function FormTransportadora({ route, navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
     >
-      {/* Header con gradiente */}
       <LinearGradient
-        colors={[colors.primary, '#1565C0']}
+        colors={['#84b2f7ff', '#84b2f7ff']}
         style={styles.header}
       >
         <View style={styles.headerIconContainer}>
-          <Ionicons name="car" size={48} color="#fff" />
+          <Ionicons name="bicycle" size={48} color="#fff" />
         </View>
         <Text style={styles.headerTitle}>
-          {trans.id ? 'Editar Transportadora' : 'Nueva Transportadora'}
+          {domiciliario.id ? 'Editar Domiciliario' : 'Nuevo Domiciliario'}
         </Text>
         <Text style={styles.headerSubtitle}>
-          {trans.id ? 'Actualiza la información' : 'Registra una nueva empresa de transporte'}
+          {domiciliario.id ? 'Actualiza la información' : 'Registra un nuevo domiciliario'}
         </Text>
       </LinearGradient>
 
@@ -92,29 +95,36 @@ export default function FormTransportadora({ route, navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Información de la Transportadora */}
         <Card style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconContainer}>
-              <Ionicons name="car" size={24} color="#fff" />
+              <Ionicons name="person" size={24} color="#fff" />
             </View>
-            <Text style={styles.sectionTitle}>Información de la Transportadora</Text>
+            <Text style={styles.sectionTitle}>Información del Domiciliario</Text>
           </View>
 
           <Input
-            label="Nombre de la transportadora *"
-            placeholder="Ej: Servientrega, Coordinadora, etc."
+            label="Nombre completo *"
+            placeholder="Ej: Juan Pérez"
             value={name}
             onChangeText={(text) => {
               setName(text);
               setErrors(prev => ({ ...prev, name: '' }));
             }}
-            icon="car"
+            icon="person"
             error={errors.name}
+          />
+
+          <Input
+            label="Teléfono"
+            placeholder="Ej: 3001234567"
+            value={phone}
+            onChangeText={setPhone}
+            icon="call"
+            keyboardType="phone-pad"
           />
         </Card>
 
-        {/* Información Adicional */}
         <Card style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionIconContainer}>
@@ -125,7 +135,7 @@ export default function FormTransportadora({ route, navigation }) {
 
           <Input
             label="Observaciones"
-            placeholder="Información adicional, contacto, horarios..."
+            placeholder="Información adicional, zona de cobertura, horarios..."
             value={observations}
             onChangeText={setObservations}
             icon="document-text"
@@ -134,11 +144,10 @@ export default function FormTransportadora({ route, navigation }) {
           />
         </Card>
 
-        {/* Botones de acción */}
         <View style={styles.buttonContainer}>
           <Button
-            title={trans.id ? 'Actualizar Transportadora' : 'Guardar Transportadora'}
-            icon={trans.id ? 'checkmark-circle' : 'add-circle'}
+            title={domiciliario.id ? 'Actualizar Domiciliario' : 'Guardar Domiciliario'}
+            icon={domiciliario.id ? 'checkmark-circle' : 'add-circle'}
             onPress={save}
             fullWidth
             style={styles.saveButton}
@@ -215,7 +224,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.primary,
+    backgroundColor: '#84b2f7ff',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.sm,

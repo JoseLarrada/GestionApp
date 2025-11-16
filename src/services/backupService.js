@@ -1,115 +1,127 @@
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import DocumentPicker from 'expo-document-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { db } from '../db/database';
 
-const tables = ['providers', 'categories', 'products', 'transfers', 'transportadoras', 'expenses', 'settings'];
+const DB_NAME = 'gestion.db';
 
-const getAllRows = (table) => db.getAllSync(`SELECT * FROM ${table}`) || [];
-
+// Exportar backup de la base de datos
 export const exportBackup = async () => {
   try {
-    const data = {};
+    // Cerrar la base de datos temporalmente
+    db.closeSync();
 
-    const tables = ['providers', 'categories', 'products', 'transfers', 'transportadoras', 'expenses', 'settings'];
-    tables.forEach(table => {
-      data[table] = db.getAllSync(`SELECT * FROM ${table}`);
-    });
+    // Generar nombre con timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    const backupFileName = `gestion_backup_${timestamp}.db`;
 
-    const json = JSON.stringify(data, null, 2);
-    const fileName = `backup_${new Date().toISOString().slice(0, 10)}.json`;
-    const uri = `${FileSystem.documentDirectory}${fileName}`;
+    // Obtener referencias a los archivos usando la nueva API
+    const dbFile = new File(Paths.document, 'SQLite', DB_NAME);
+    const backupFile = new File(Paths.cache, backupFileName);
 
-    await FileSystem.writeAsStringAsync(uri, json);
+    // Leer el contenido de la base de datos como bytes
+    const dbContent = await dbFile.bytes;
 
-    // Actualizamos fecha del último respaldo
-    db.runSync(`INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup', ?)`, [new Date().toISOString()]);
+    // Crear y escribir en el archivo de backup
+    await backupFile.create();
+    backupFile.bytes = dbContent;
 
-    await Sharing.shareAsync(uri, {
-      mimeType: 'application/json',
-      dialogTitle: 'Respaldo Gestión App',
-    });
+    // Reabrir la base de datos
+    const { openDatabaseSync } = require('expo-sqlite');
+    const newDb = openDatabaseSync(DB_NAME);
+    Object.assign(db, newDb);
+
+    // Obtener la URI del archivo para compartir
+    const backupUri = backupFile.uri;
+
+    // Compartir el archivo
+    const canShare = await Sharing.isAvailableAsync();
+    if (canShare) {
+      await Sharing.shareAsync(backupUri, {
+        mimeType: 'application/x-sqlite3',
+        dialogTitle: 'Guardar backup de base de datos',
+      });
+    } else {
+      throw new Error('No se puede compartir archivos en este dispositivo');
+    }
+
+    console.log('Backup exportado exitosamente:', backupUri);
+    return backupUri;
   } catch (error) {
-    Alert.alert('Error', 'No se pudo crear el respaldo: ' + error.message);
+    // Asegurarse de reabrir la DB si algo falla
+    try {
+      const { openDatabaseSync } = require('expo-sqlite');
+      const newDb = openDatabaseSync(DB_NAME);
+      Object.assign(db, newDb);
+    } catch (reopenError) {
+      console.error('Error al reabrir DB:', reopenError);
+    }
+    
+    console.error('Error al exportar backup:', error);
+    throw error;
   }
 };
 
+// Importar backup de la base de datos
 export const importBackup = async () => {
   try {
+    // Seleccionar archivo de backup
     const result = await DocumentPicker.getDocumentAsync({
-      type: 'application/json',
-      copyToCacheDirectory: false, // más rápido
+      type: '*/*',
+      copyToCacheDirectory: true,
     });
 
-    // Nueva API de DocumentPicker (SDK 49+)
     if (result.canceled) {
-      return;
+      throw new Error('Selección cancelada');
     }
 
-    const uri = result.assets[0].uri;
-    const content = await FileSystem.readAsStringAsync(uri);
-    const data = JSON.parse(content);
+    const selectedFile = result.assets[0];
 
-    // Todo dentro de una transacción síncrona
-    db.withTransactionSync(() => {
-      // 1. Borrar todo (orden importante por claves foráneas)
-      const deleteOrder = [
-        'expenses',
-        'products',
-        'transfers',
-        'providers',
-        'categories',
-        'transportadoras',
-        'settings',
-      ];
-      deleteOrder.forEach(table => {
-        db.execSync(`DELETE FROM ${table}`);
-      });
+    // Cerrar la base de datos actual
+    db.closeSync();
 
-      // 2. Insertar todo (orden inverso)
-      const insertOrder = [
-        'providers',
-        'categories',
-        'transportadoras',
-        'settings',
-        'products',
-        'expenses',
-        'transfers',
-      ];
+    // Crear backup de seguridad de la DB actual antes de reemplazar
+    try {
+      const dbFile = new File(Paths.document, 'SQLite', DB_NAME);
+      const backupFileName = `backup_before_restore_${Date.now()}.db`;
+      const backupFile = new File(Paths.cache, backupFileName);
+      
+      const dbContent = await dbFile.bytes;
+      await backupFile.create();
+      backupFile.bytes = dbContent;
+      
+      console.log('Backup de seguridad creado antes de restaurar');
+    } catch (backupError) {
+      console.warn('No se pudo crear backup de seguridad:', backupError);
+    }
 
-      insertOrder.forEach(table => {
-        const rows = data[table] || [];
-        rows.forEach(row => {
-          // Filtramos campos undefined/null para evitar errores
-          const keys = [];
-          const values = [];
-          const placeholders = [];
+    // Leer el contenido del archivo seleccionado
+    const selectedFileObj = new File(selectedFile.uri);
+    const backupContent = await selectedFileObj.bytes;
 
-          Object.keys(row).forEach(key => {
-            if (row[key] !== undefined && row[key] !== null) {
-              keys.push(key);
-              values.push(row[key]);
-              placeholders.push('?');
-            }
-          });
+    // Escribir el nuevo contenido en la DB
+    const dbFile = new File(Paths.document, 'SQLite', DB_NAME);
+    dbFile.bytes = backupContent;
 
-          if (keys.length > 0) {
-            const sql = `INSERT INTO ${table} (${keys.join(', ')}) VALUES (${placeholders.join(', ')})`;
-            db.runSync(sql, values);
-          }
-        });
-      });
-    });
+    // Reabrir la base de datos
+    const { openDatabaseSync } = require('expo-sqlite');
+    const newDb = openDatabaseSync(DB_NAME);
+    Object.assign(db, newDb);
 
-    // Actualizamos la fecha del último respaldo
-    db.runSync(
-      `INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup', ?)`,
-      [new Date().toISOString()]
-    );
-
-    Alert.alert('¡Éxito!', 'Respaldo restaurado correctamente. Reinicia la app para ver los cambios.');
+    console.log('Backup importado exitosamente desde:', selectedFile.uri);
+    return true;
   } catch (error) {
-    console.error('Error restaurando respaldo:', error);
-    Alert.alert('Error', 'No se pudo restaurar el respaldo: ' + error.message);
+    console.error('Error al importar backup:', error);
+    
+    // Intentar reabrir la DB
+    try {
+      const { openDatabaseSync } = require('expo-sqlite');
+      const newDb = openDatabaseSync(DB_NAME);
+      Object.assign(db, newDb);
+    } catch (reopenError) {
+      console.error('Error al reabrir DB:', reopenError);
+    }
+    
+    throw error;
   }
 };
